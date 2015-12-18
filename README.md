@@ -1,12 +1,12 @@
 # StarMade-Multi-Tier-Rewards
-Multi-tiered configurable rewards script for StarMade servers.
-Based on rewardvotes.php by: Mike Sheen (mike@sheen.id.au)
+Multi-tiered configurable rewards script for StarMade servers.  
+Based on rewardvotes.php by: Mike Sheen (mike@sheen.id.au)  
 
 ## Setup
 
 ### Main Config File
-Edit the config file (multi-tier-rewards.cfg.example) to your required settings,
-and rename it to multi-tier-rewards.cfg.
+Edit the config file (multi-tier-rewards.cfg.example) to your required settings,  
+and rename it to multi-tier-rewards.cfg.  
 
     ; this is the Super admin password from the StarMade server.cfg
     adminpassword = "YOUR_SUPER_ADMIN_PASS"
@@ -21,7 +21,7 @@ and rename it to multi-tier-rewards.cfg.
     javapath = "/usr/bin"
 
 ### Rewards Config Map File
-Edit the rewards config (.ini) to your desired settings.
+Edit the rewards config (.ini) to your desired settings.  
 
     ; If you make new tiers,
     ; make sure to use sections
@@ -57,11 +57,11 @@ Edit the rewards config (.ini) to your desired settings.
     rewards[blocks] = 343:5,1:1
 
 ### Permissions & Cron
-Make sure to chown and/or chmod the main script to an appropriate user on your system,
-`chown someone:someone multi-tier-rewards.php`
-`chmod +x multi-tier-rewards.php`
+Make sure to chown and/or chmod the main script to an appropriate user on your system,  
+`chown someone:someone multi-tier-rewards.php`  
+`chmod +x multi-tier-rewards.php`  
 
-Cron it for however frequent you like, I chose every 5 mins.
+Cron it for however frequent you like, I chose every 5 mins.  
 `*/5 * * * * /usr/bin/php /path/to/multi-tier-rewards/multi-tier-rewards.php 2>&1 >> /path/to/multi-tier-rewards/multi-tier-rewards.log`
 
 ## Roadmap
