@@ -2,6 +2,22 @@
 Multi-tiered configurable rewards script for StarMade servers.  
 Based on rewardvotes.php by: Mike Sheen (mike@sheen.id.au)  
 
+## Highlights:
+ - Increasing rewards for voting on consecutive days.
+ - Multipliers/benefits for consecutive voting are lost if a day is missed.
+ - Configurable reward tiers for a high degree of customization.
+ - Creates vote-reward urgency.
+
+## Current Configurable Rewards:
+ - Credits
+ - Faction Points
+ - Blocks
+
+## Planned Configurable Rewards:
+ - Commands
+ - Entities
+ - ??
+
 ## Setup
 
 ### Main Config File
@@ -63,6 +79,3 @@ Make sure to chown and/or chmod the main script to an appropriate user on your s
 
 Cron it for however frequent you like, I chose every 5 mins.  
 `*/5 * * * * /usr/bin/php /path/to/multi-tier-rewards/multi-tier-rewards.php 2>&1 >> /path/to/multi-tier-rewards/multi-tier-rewards.log`
-
-## Roadmap
-- Add more kinds of rewards: commands (with use limit,) entities (ships, AI, etc).
