@@ -1,0 +1,23 @@
+; Multi-Tier-Rewards MAIN Config INI
+
+; You need the following configurations set in your server.cfg for StarMade:
+; SUPER_ADMIN_PASSWORD_USE = true //Enable super admin for this server
+; SUPER_ADMIN_PASSWORD = SETTHISTOBEYOURS //Super admin password for this server
+
+; ** DON'T FORGET TO RENAME THIS FILE TO .CFG
+
+;
+; Edit this part.
+;
+
+; this is the Super admin password from the StarMade server.cfg
+adminpassword = "YOUR_SUPER_ADMIN_PASS"
+
+; This is the API Key issued to your listing by starmade-servers.com
+serverkey = "YOUR_API_KEY_FROM_STARMADE-SERVERS.COM"
+
+; Full path to the StarNet jar file provided with StarMade
+starnetpath = "/home/steam/starmade/tools"
+
+; if you plan on calling this from a crontab, you must fully path all file locations
+javapath = "/usr/bin"
