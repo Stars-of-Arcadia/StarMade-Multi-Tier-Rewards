@@ -133,29 +133,38 @@ if (sizeof($result['votes']) > 0) {
 
 	// Iterate and process them all
 	foreach ($result['votes'] as $vote) {
+
 		 // Tho, we're only interested in votes not claimed
 		if ($vote['claimed'] == 0) {
+
+			// Starmade-servers.com provides EST timestamps,
+			// adjust to localtime, otherwise players will
+			// have to wait up to time_delta to receive rewards
+			$local_vote_time = new DateTime(date("F j, Y, H:i", $vote['timestamp']), new DateTimeZone($config['timezone']));
+			$local_vote_time = $local_vote_time->format('U');
+
 			// We will handle our own time/date checking
-			if (($now - $vote['timestamp']) <= 86400) {
+			if (($now - $local_vote_time) <= 86400) {
 
 				// if we have data on this user already
 				if (isset($user_data[$vote['nickname']])) {
-					if (($vote['timestamp'] - $user_data[$vote['nickname']]['last_vote']) <= 86400) {
+					if (($local_vote_time - $user_data[$vote['nickname']]['last_vote']) <= 86400) {
 						// most likely delta == 0, and user voted already today!
 						continue;
-					} else if (($vote['timestamp'] - $user_data[$vote['nickname']]['last_vote']) >= (86400*2) ) {
+					} else if (($local_vote_time - $user_data[$vote['nickname']]['last_vote']) >= (86400*2) ) {
 						// user missed a day
-						$user_new_data[$vote['nickname']]['consecutive_votes'] = 0;
+						// set back to 1 vote so they can still redeem a vote today. @captianjack
+						$user_new_data[$vote['nickname']]['consecutive_votes'] = 1;
 					} else {
 						// increment consecutive votes
 						$user_new_data[$vote['nickname']]['consecutive_votes'] = $user_data[$vote['nickname']]['consecutive_votes'] + 1;
 					}
 
 					// set last vote to this vote
-					$user_new_data[$vote['nickname']]['last_vote'] = $vote['timestamp'];
+					$user_new_data[$vote['nickname']]['last_vote'] = $local_vote_time;
 				} else {
 					// first timer, create a new entry
-					$user_new_data[$vote['nickname']] = array('consecutive_votes' => 1, 'last_vote' => $vote['timestamp']);
+					$user_new_data[$vote['nickname']] = array('consecutive_votes' => 1, 'last_vote' => $local_vote_time);
 				}
 
 				// handle steamid also /* later */
@@ -211,6 +220,7 @@ if (sizeof($result['votes']) > 0) {
 
 			$reward_objects = array();
 
+			// if the current tier inherits
 			if ( $reward_map[$real_tier]['inherit'] == true ) {
 				// inherit all previous exported rewards.
 				for ($j = 0; $j < $real_tier; $j++) {
@@ -305,7 +315,8 @@ if (sizeof($result['votes']) > 0) {
 
 			}
 
-			echo "DEBUG: * REWARDS: c:$reward_credits fp:$reward_faction_points b:$reward_block_count\n";
+			// DEBUG
+			//echo "DEBUG: * REWARDS: c:$reward_credits fp:$reward_faction_points b:$reward_block_count\n";
 
 			// Test to confirm player is online
 			if ( player_is_online($data['name']) ) {
@@ -455,6 +466,7 @@ function player_is_online($player) {
 	$online = false;
 	list($output,$exitval) = starnet_cmd('/player_info ' . $player);
 
+	// Offline players are 'IP: null'
 	foreach ($output as $line) {
 		if (preg_match('/IP: \/\d{1,3}/', $line)) {
 			$online = true;
