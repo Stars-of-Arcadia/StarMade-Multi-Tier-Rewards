@@ -36,11 +36,6 @@ and rename it to multi-tier-rewards.cfg.
     ; if you plan on calling this from a crontab, you must fully path all file locations
     javapath = "/usr/bin"
 
-	; Local Timezone (for conversion)
-	; ** WARNING ** YOU *MUST* USE A VALID TIMEZONE, OR THIS SCRIPT WILL NOT FUNCTION!
-	; Valid timezones may be obtained here: http://php.net/manual/en/timezones.php
-	timezone = "America/Los_Angeles"
-
 ### Rewards Config Map File
 Edit the rewards config (.ini) to your desired settings.  
 
