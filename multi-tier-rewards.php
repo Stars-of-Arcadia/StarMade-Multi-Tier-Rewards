@@ -109,8 +109,8 @@ if ( file_exists($ini_file) ) {
 // MAIN
 //
 
-
-// Does anybody really know what time it is? :)
+// Starmade-servers.com provides EST timestamps,
+date_default_timezone_set('America/New_York');
 $now = time();
 
 // Get All Votes, (last 50)
@@ -137,39 +137,19 @@ if (sizeof($result['votes']) > 0) {
 		 // Tho, we're only interested in votes not claimed
 		if ($vote['claimed'] == 0) {
 
-			// Starmade-servers.com provides EST timestamps,
-			// adjust to localtime, otherwise players will
-			// have to wait up to time_delta to receive rewards
-			$local_vote_time = new DateTime(date("F j, Y, H:i", $vote['timestamp']), new DateTimeZone($config['timezone']));
-			$local_vote_time = $local_vote_time->format('U');
-
-			// We will handle our own time/date checking
-			if (($now - $local_vote_time) <= 86400) {
-
-				// if we have data on this user already
-				if (isset($user_data[$vote['nickname']])) {
-					if (($local_vote_time - $user_data[$vote['nickname']]['last_vote']) <= 86400) {
-						// most likely delta == 0, and user voted already today!
-						continue;
-					} else if (($local_vote_time - $user_data[$vote['nickname']]['last_vote']) >= (86400*2) ) {
-						// user missed a day
-						// set back to 1 vote so they can still redeem a vote today. @captianjack
-						$user_new_data[$vote['nickname']]['consecutive_votes'] = 1;
-					} else {
-						// increment consecutive votes
-						$user_new_data[$vote['nickname']]['consecutive_votes'] = $user_data[$vote['nickname']]['consecutive_votes'] + 1;
-					}
-
-					// set last vote to this vote
-					$user_new_data[$vote['nickname']]['last_vote'] = $local_vote_time;
-				} else {
-					// first timer, create a new entry
-					$user_new_data[$vote['nickname']] = array('consecutive_votes' => 1, 'last_vote' => $local_vote_time);
-				}
-
+			// in the last 24hrs
+			if (($now - $vote['timestamp']) <= 86400) {
 				// handle steamid also /* later */
-				array_push($voters, array('name' => $vote['nickname'], 'steam' => $vote['steamid']));
+				array_push( $voters,
+					array(
+						'name' => $vote['nickname'],
+						'steam' => $vote['steamid'],
+						'timestamp' => $vote['timestamp'],
+						'claimed' => $vote['claimed']
+					)
+				);
 			}
+
 		}
 	}
 
@@ -182,8 +162,12 @@ if (sizeof($result['votes']) > 0) {
 	}
 
 	foreach ($voters as $data) {
-		echo("Unclaimed vote found for " . $data['name'] . " " . $data['steam'] . "\n");
-		// Already checking this above, so double checking here for good measure.
+
+		// first timer, create a new entry
+		if (! isset($user_data[$data['name']])) {
+			$user_new_data[$data['name']] = array('consecutive_votes' => 1);
+		}
+
 		// Technically: We need to do this, because we can't set a vote as claimed unless it was within the last 24 hours 
 		// per starmade-servers.com says rules.
 		$url = "http://starmade-servers.com/api/?object=votes&element=claim&key=";
@@ -199,190 +183,203 @@ if (sizeof($result['votes']) > 0) {
 		$context = stream_context_create($options);
 		$contents = file_get_contents($url, false, $context);
 
-		// A return value of "1" means they've voted in the last day, but not claimed it yet -
-		// "2" means voted in the last day but already claimed, "0" means not voted in the last day -
-		// we're only interested in the "1" values
-		if ($contents == "1") {
+		// Return value of "0" means not voted in the last day -
+		// "2" voted in last day, already claimed
+		if ($contents == "0") {
+			// user missed a day
+			// set back to 1 vote so they can still redeem a vote today. @captianjack
+			$user_new_data[$data['name']]['consecutive_votes'] = 1;
 
-			// decide the user's rewards for today based on the mapping
-			$votes = $user_new_data[$data['name']]['consecutive_votes'];
-			$real_tier = 0;
-			$tier_delta = 0;
-			$repeat_count = 0;
-			for ($i=0; $i < count($reward_map); $i++) {
-				$repeat_count += $reward_map[$i]['repeat'];
-				$tier_delta = $votes - $repeat_count;
-				if ( $tier_delta < 0 ) {
-					$real_tier = $i;
-					break;
-				}
-			}
+		// Return value of "1" means they've voted in the last day, not yet claimed
+		} else if ($contents == "1") {
 
-			$reward_objects = array();
-
-			// if the current tier inherits
-			if ( $reward_map[$real_tier]['inherit'] == true ) {
-				// inherit all previous exported rewards.
-				for ($j = 0; $j < $real_tier; $j++) {
-					if ($reward_map[$j]['export'] == true ) {
-						$reward_objects[] = $reward_map[$j];
-					}
-				}
-			}
-
-			// actual tier goes on last
-			$reward_objects[] = $reward_map[$real_tier];
-
-			$reward_credits = 0;
-			$reward_faction_points = 0;
-			$reward_block_count = 0;
-			$reward_blocks = array();
-			$reward_commands = array();
-			$reward_entities = array();
-
-			// now that we have all the reward objects for this user
-			// iterate and process them
-			$repeat_count = 0;
-			for ($i=0; $i < count($reward_objects); $i++) {
-				$multi = $reward_objects[$i]['multiplier'];
-				$repeat_count += $reward_objects[$i]['repeat'];
-				$tier_increment = $votes - $repeat_count;
-
-				if ( $tier_increment < 0 ) {
-					$tier_increment = $reward_objects[$i]['repeat'] - abs($tier_increment);
-				} else {
-					$tier_increment = $reward_objects[$i]['repeat'];
-				}
-
-				if ( isset($reward_objects[$i]['rewards']) && count($reward_objects[$i]['rewards']) > 0 ) {
-					$this_tier_rewards = $reward_objects[$i]['rewards'];
-					foreach ($this_tier_rewards as $reward => $value) {
-						switch($reward) {
-							case 'credits':
-								$reward_credits += ($tier_increment * $multi) * $value;
-							break;
-							case 'faction_points':
-								$reward_faction_points += ($tier_increment * $multi) * $value;
-							break;
-							case 'blocks':
-								$blocks = preg_split('/,\s?/', $value);
-								foreach ($blocks as $block_string) {
-									list($block_id,$count) = preg_split('/:\s?/', $block_string);
-									$amount = ($tier_increment * $multi) * $count;
-									if (isset($reward_blocks[$block_id])) {
-										$reward_blocks[$block_id] += $anount;
-									} else {
-										$reward_blocks[$block_id] = $amount;
-									}
-									$reward_block_count += $amount;
-								}
-							break;
-						}
-					}
-				}
-
-				// same calc as above, reiterated through the previous reward tiers
-				for ($j=0; $j < $i; $j++) {
-					$mul = $reward_objects[$j]['multiplier'];
-
-					if ( isset($reward_objects[$j]['rewards']) && count($reward_objects[$j]['rewards']) > 0 ) {
-						$reiterated_tier_rewards = $reward_objects[$j]['rewards'];
-						foreach ($reiterated_tier_rewards as $reward => $value) {
-							switch($reward) {
-								case 'credits':
-									$reward_credits += ($tier_increment * $mul) * $value;
-								break;
-								case 'faction_points':
-									$reward_faction_points += ($tier_increment * $mul) * $value;
-								break;
-								case 'blocks':
-									$blocks = preg_split('/,\s?/', $value);
-									foreach ($blocks as $block_string) {
-										list($block_id,$count) = preg_split('/:\s?/', $block_string);
-										$amount = ($tier_increment * $mul) * $count;
-										if (isset($reward_blocks[$block_id])) {
-											$reward_blocks[$block_id] += $anount;
-										} else {
-											$reward_blocks[$block_id] = $amount;
-										}
-										$reward_block_count += $amount;
-									}
-								break;
-							}
-						}
-					}
-				}
-
-			}
-
-			// DEBUG
-			//echo "DEBUG: * REWARDS: c:$reward_credits fp:$reward_faction_points b:$reward_block_count\n";
+			echo("Unclaimed vote found for " . $data['name'] . " " . $data['steam'] . "\n");
 
 			// Test to confirm player is online
 			if ( player_is_online($data['name']) ) {
 
-				$rewards_string = '';
+				// Try to claim this vote, otherwise don't give out rewards
+				$url = "http://starmade-servers.com/api/?action=post&object=votes&element=claim&key=";
+				$url .= $config['serverkey'] . "&username=" . $data['name'];
 
-				// process all the rewards
-				$claimed = false;
-				if ($reward_credits > 0) {
-					give_credits($data['name'], $reward_credits);
-					$rewards_string .= $reward_credits . ' credits';
+				$options = array(
+					'http' => array(
+						'header'  => "Content-type: application/json\r\n",
+						'method'  => 'POST'
+					),
+				);
 
-					$message = '[HERALD] Gave you ' . $reward_credits . ' Credits.';
-					send_pm($data['name'], $message);
-					$claimed = true;
-				}
-				if ($reward_faction_points > 0) {
-					give_faction_points($data['name'], $reward_faction_points);
-					$rewards_string .= ' ' . $reward_faction_points . ' FP';
+				$context = stream_context_create($options);
+				$result = file_get_contents($url, false, $context);
 
-					$message = '[HERALD] Gave you ' . $reward_faction_points . ' Faction Points';
-					send_pm($data['name'], $message);
-					$claimed = true;
-				}
-				if (count($reward_blocks) > 0) {
-					give_blocks($data['name'], $reward_blocks);
-					$rewards_string .= ' ' . $reward_block_count . ' blocks';
+				// page will return 1 if everything was ok, otherwise 0
+				if ($result == "1") {
+					// all good
+					// increment consecutive votes
+					$user_new_data[$data['name']]['consecutive_votes'] = $user_data[$data['name']]['consecutive_votes'] + 1;
 
-					$message = '[HERALD] Gave you ' . $reward_block_count . ' Blocks';
-					send_pm($data['name'], $message);
-					$claimed = true;
-				}
+					// decide the user's rewards for today based on the mapping
+					$votes = $user_new_data[$data['name']]['consecutive_votes'];
+					$real_tier = 0;
+					$tier_delta = 0;
+					$repeat_count = 0;
+					for ($i=0; $i < count($reward_map); $i++) {
+						$repeat_count += $reward_map[$i]['repeat'];
+						$tier_delta = $votes - $repeat_count;
+						if ( $tier_delta < 0 ) {
+							$real_tier = $i;
+							break;
+						}
+					}
 
-				// Were they able to claim a reward of some value?
-				if ($claimed == true) {
+					$reward_objects = array();
 
-					$message = 'Vote again tomorrow for even better rewards!';
-					send_pm($data['name'], $message);
+					// if the current tier inherits
+					if ( $reward_map[$real_tier]['inherit'] == true ) {
+						// inherit all previous exported rewards.
+						for ($j = 0; $j < $real_tier; $j++) {
+							if ($reward_map[$j]['export'] == true ) {
+								$reward_objects[] = $reward_map[$j];
+							}
+						}
+					}
 
-					echo(" * Gave player c:$reward_credits fp:$reward_faction_points b:$reward_block_count");
-					echo(" rewards ok: claiming.\n");
+					// actual tier goes on last
+					$reward_objects[] = $reward_map[$real_tier];
 
-					$url = "http://starmade-servers.com/api/?action=post&object=votes&element=claim&key=";
-					$url .= $config['serverkey'] . "&username=" . $data['name'];
+					$reward_credits = 0;
+					$reward_faction_points = 0;
+					$reward_block_count = 0;
+					$reward_blocks = array();
+					$reward_commands = array();
+					$reward_entities = array();
 
-					$options = array(
-						'http' => array(
-							'header'  => "Content-type: application/json\r\n",
-							'method'  => 'POST'
-						),
-					);
+					// now that we have all the reward objects for this user
+					// iterate and process them
+					$repeat_count = 0;
+					for ($i=0; $i < count($reward_objects); $i++) {
+						$multi = $reward_objects[$i]['multiplier'];
+						$repeat_count += $reward_objects[$i]['repeat'];
+						$tier_increment = $votes - $repeat_count;
 
-					$context = stream_context_create($options);
-					$result = file_get_contents($url, false, $context);
+						if ( $tier_increment < 0 ) {
+							$tier_increment = $reward_objects[$i]['repeat'] - abs($tier_increment);
+						} else {
+							$tier_increment = $reward_objects[$i]['repeat'];
+						}
 
-					// page will return 1 if everything was ok, otherwise 0 - 
-					// no worries if we gave the rewards but couldn't mark it as claimed -
-					// we do our own time/date checking against votes above.
-					echo(" * Broadcasting the transaction.\n");
+						if ( isset($reward_objects[$i]['rewards']) && count($reward_objects[$i]['rewards']) > 0 ) {
+							$this_tier_rewards = $reward_objects[$i]['rewards'];
+							foreach ($this_tier_rewards as $reward => $value) {
+								switch($reward) {
+									case 'credits':
+										$reward_credits += ($tier_increment * $multi) * $value;
+									break;
+									case 'faction_points':
+										$reward_faction_points += ($tier_increment * $multi) * $value;
+									break;
+									case 'blocks':
+										$blocks = preg_split('/,\s?/', $value);
+										foreach ($blocks as $block_string) {
+											list($block_id,$count) = preg_split('/:\s?/', $block_string);
+											$amount = ($tier_increment * $multi) * $count;
+											if (isset($reward_blocks[$block_id])) {
+												$reward_blocks[$block_id] += $anount;
+											} else {
+												$reward_blocks[$block_id] = $amount;
+											}
+											$reward_block_count += $amount;
+										}
+									break;
+								}
+							}
+						}
 
-					$message = '[HERALD] Gave ' . $data['name'] . ' ' . $rewards_string;
-					$message .= ' for voting for us ' . $user_new_data[$data['name']]['consecutive_votes'];
-					$message .= ' days in a row on starmade-servers.com';
-					send_chat($message);
+						// same calc as above, reiterated through the previous reward tiers
+						for ($j=0; $j < $i; $j++) {
+							$mul = $reward_objects[$j]['multiplier'];
+
+							if ( isset($reward_objects[$j]['rewards']) && count($reward_objects[$j]['rewards']) > 0 ) {
+								$reiterated_tier_rewards = $reward_objects[$j]['rewards'];
+								foreach ($reiterated_tier_rewards as $reward => $value) {
+									switch($reward) {
+										case 'credits':
+											$reward_credits += ($tier_increment * $mul) * $value;
+										break;
+										case 'faction_points':
+											$reward_faction_points += ($tier_increment * $mul) * $value;
+										break;
+										case 'blocks':
+											$blocks = preg_split('/,\s?/', $value);
+											foreach ($blocks as $block_string) {
+												list($block_id,$count) = preg_split('/:\s?/', $block_string);
+												$amount = ($tier_increment * $mul) * $count;
+												if (isset($reward_blocks[$block_id])) {
+													$reward_blocks[$block_id] += $anount;
+												} else {
+													$reward_blocks[$block_id] = $amount;
+												}
+												$reward_block_count += $amount;
+											}
+										break;
+									}
+								}
+							}
+						}
+
+					}
+
+					$rewards_string = '';
+
+					// process all the rewards
+					$claimed = false;
+					if ($reward_credits > 0) {
+						give_credits($data['name'], $reward_credits);
+						$rewards_string .= $reward_credits . ' credits';
+
+						$message = '[HERALD] Gave you ' . $reward_credits . ' Credits.';
+						send_pm($data['name'], $message);
+						$claimed = true;
+					}
+					if ($reward_faction_points > 0) {
+						give_faction_points($data['name'], $reward_faction_points);
+						$rewards_string .= ' ' . $reward_faction_points . ' FP';
+
+						$message = '[HERALD] Gave you ' . $reward_faction_points . ' Faction Points';
+						send_pm($data['name'], $message);
+						$claimed = true;
+					}
+					if (count($reward_blocks) > 0) {
+						give_blocks($data['name'], $reward_blocks);
+						$rewards_string .= ' ' . $reward_block_count . ' blocks';
+
+						$message = '[HERALD] Gave you ' . $reward_block_count . ' Blocks';
+						send_pm($data['name'], $message);
+						$claimed = true;
+					}
+
+					// Were they able to claim a reward of some value?
+					if ($claimed == true) {
+
+						$message = 'Vote again tomorrow for even better rewards!';
+						send_pm($data['name'], $message);
+
+						echo(" * Gave player c:$reward_credits fp:$reward_faction_points b:$reward_block_count");
+						echo(" rewards ok: claiming.\n");
+
+						echo(" * Broadcasting the transaction.\n");
+
+						$message = '[HERALD] Gave ' . $data['name'] . ' ' . $rewards_string;
+						$message .= ' for voting for us ' . $user_new_data[$data['name']]['consecutive_votes'];
+						$message .= ' days in a row on starmade-servers.com';
+						send_chat($message);
+					} else {
+						echo(" * Player had no rewards: vote NOT claimed.\n");
+						unset($user_new_data[ $data['name'] ]);
+					}
+
 				} else {
-					echo(" * Player had no rewards: vote NOT claimed.\n");
+					echo(" * Error claiming vote: vote NOT claimed.\n");
 					unset($user_new_data[ $data['name'] ]);
 				}
 			} else {
